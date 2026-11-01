@@ -30,6 +30,7 @@ const code = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/scri
 vm.runInContext(code, context);
 const run = code => vm.runInContext(code, context);
 assert.equal(run('ui.group'), 'Общее');
+assert(element('.brand b').innerHTML.includes('v1.2.1'));
 assert.equal(run('groups().length'), 4);
 assert(!element('content').innerHTML.includes('data-group="Все"'));
 assert(element('content').innerHTML.includes('data-reset='));
@@ -37,9 +38,9 @@ assert(!element('content').innerHTML.includes('Открытое окно'));
 
 function swipe(dx, dy = 0, target = null) {
   const touch = { identifier: 1, clientX: 200, clientY: 200 };
-  handlers['content:touchstart']({ touches: [touch], target: { closest: () => target } });
+  handlers['content:touchstart']({ touches: [touch], target: { closest: selector => target === 'input' && selector.includes('input') ? {} : null } });
   const end = { ...touch, clientX: 200 + dx, clientY: 200 + dy };
-  handlers['content:touchmove']({ touches: [end] });
+  handlers['content:touchmove']({ touches: [end], cancelable: true, preventDefault() {} });
   handlers['content:touchend']({ changedTouches: [end], preventDefault() {} });
 }
 swipe(-100);
@@ -48,9 +49,17 @@ assert(element('content').innerHTML.includes('Открытое окно'));
 swipe(100);
 assert.equal(run('ui.group'), 'Общее');
 swipe(100); // No wrap at the boundary.
-swipe(-100, 80); // Vertical scrolling is not a group switch.
-swipe(-100, 0, {}); // Tab strip keeps its native horizontal scrolling.
+swipe(-60, 100); // Vertical scrolling is not a group switch.
+swipe(-100, 0, 'input'); // Inputs ignore group gestures.
 assert.equal(run('ui.group'), 'Общее');
+swipe(-100, 40, 'tabs'); // Diagonal swipe on the group strip also works.
+assert.equal(run('ui.group'), 'Воздух');
+swipe(100, 40);
+assert.equal(run('ui.group'), 'Общее');
+let prevented = false;
+let stopped = false;
+handlers['content:click']({ preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });
+assert(prevented && stopped); // A swipe starting on a button must not activate it.
 run("ui.view='stats'");
 swipe(-100);
 assert.equal(run('ui.group'), 'Общее');

@@ -17,8 +17,9 @@
 .overlay{position:fixed;z-index:20;inset:0;background:#000a;display:flex;align-items:flex-end;justify-content:center;padding:4px}.sheet{background:#292929;border:1px solid #707070;width:min(100%,480px);max-height:90dvh;overflow:auto;padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}.sheet h2{font-size:15px;margin:0}.close{width:27px;height:27px;background:#414141;display:grid;place-items:center}.field{display:block;margin:0 0 7px;font-size:11px;font-weight:650;color:#ccc}.field input,.field select{display:block;width:100%;margin-top:3px;border:1px solid #666;border-radius:2px;background:#1b1b1b;color:#eee;padding:6px;font-size:14px;min-height:33px}.field select{appearance:auto}.color-row{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 9px}.color-choice{width:25px;height:25px;background:var(--c);border:2px solid #292929;outline:1px solid #777}.color-choice.selected{outline:2px solid #fff}.sheet-actions{display:grid;gap:4px}.primary,.secondary,.danger{min-height:34px;padding:5px;font-size:12px;font-weight:700}.primary{background:#c77721;border-color:#f4a44a;color:#fff}.secondary{background:#444;color:#fff}.danger{background:#623f39;color:#ffd0c7}.option{width:100%;display:flex;align-items:center;gap:7px;padding:7px 3px;text-align:left;background:transparent;border:0;border-bottom:1px solid #555;font-size:12px}.option:last-child{border:0}.option svg{color:#ccc}.option.danger-text{color:#ffafa2}.option small{display:block;color:var(--muted);font-size:10px;margin-top:1px}.help{color:var(--muted);font-size:11px;line-height:1.35;margin:7px 0}.toast{position:fixed;z-index:30;left:50%;bottom:51px;transform:translateX(-50%);border:1px solid #777;background:#ddd;color:#222;font-size:11px;padding:6px 9px;max-width:95vw;white-space:nowrap}.storage-alert{background:#653d31;color:#ffe1bf;font-size:11px;line-height:1.3;padding:6px;margin-bottom:3px}.hidden{display:none!important}@media(max-width:369px){.action{padding:2px 5px;font-size:10px}.action svg{display:none}.clock{font-size:22px}}@media(min-width:760px){.timer-list{grid-template-columns:1fr 1fr}.overlay{align-items:center}}
 </style>
 <style>
-#content{touch-action:pan-y}
-.tabs-scroll{touch-action:auto}
+#content{touch-action:pan-y;min-height:calc(100dvh - 160px)}
+.tabs-scroll{touch-action:pan-y}
+.app-version{color:var(--muted);font-size:10px;font-weight:400;margin-left:5px;white-space:nowrap}
 .action.reset-action{background:#333;color:var(--red);min-width:31px;padding:2px 5px}
 @media(max-width:380px){.timer-card{grid-template-areas:"head head" "time time" "actions actions"}.timer-actions{justify-content:flex-end}.time-row{padding:3px 0}}
 </style>
@@ -35,6 +36,8 @@
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
+const APP_VERSION='1.2.1';
+document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
 const icons={
@@ -87,30 +90,46 @@ function switchGroup(direction){
  ui.group=available[next];render();
  document.querySelector('.chip.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
 }
-let groupGesture=null;
+let groupGesture=null,swipeClickUntil=0;
 const groupContent=document.getElementById('content');
 groupContent.addEventListener('touchstart',e=>{
  groupGesture=null;
- if(ui.view!=='timers'||ui.modal||e.touches.length!==1||e.target.closest('.tabs-scroll,input,select,textarea'))return;
+ if(ui.view!=='timers'||ui.modal||e.touches.length!==1||e.target.closest('input,select,textarea'))return;
  const touch=e.touches[0];
- groupGesture={id:touch.identifier,x:touch.clientX,y:touch.clientY};
-},{passive:true});
+ groupGesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,axis:null,handled:false};
+ },{passive:true});
 groupContent.addEventListener('touchmove',e=>{
  if(!groupGesture)return;
  const touch=Array.from(e.touches).find(t=>t.identifier===groupGesture.id);
- if(e.touches.length!==1||!touch||Math.abs(touch.clientY-groupGesture.y)>30)groupGesture=null;
-},{passive:true});
+ if(e.touches.length!==1||!touch||ui.view!=='timers'||ui.modal){groupGesture=null;return}
+ const dx=touch.clientX-groupGesture.x,dy=touch.clientY-groupGesture.y;
+ if(!groupGesture.axis){
+  if(Math.max(Math.abs(dx),Math.abs(dy))<10)return;
+  if(Math.abs(dy)>Math.abs(dx)*1.2){groupGesture=null;return}
+  if(Math.abs(dx)>Math.abs(dy)*1.2)groupGesture.axis='x';
+ }
+ if(groupGesture.axis!=='x')return;
+ if(e.cancelable)e.preventDefault();
+ if(groupGesture.handled||Math.abs(dx)<50)return;
+ groupGesture.handled=true;
+ swipeClickUntil=Date.now()+600;
+ switchGroup(dx<0?1:-1);
+},{passive:false});
 groupContent.addEventListener('touchend',e=>{
  const start=groupGesture;groupGesture=null;
- if(!start||ui.view!=='timers'||ui.modal)return;
+ if(!start||start.handled||ui.view!=='timers'||ui.modal)return;
  const touch=Array.from(e.changedTouches).find(t=>t.identifier===start.id);
  if(!touch)return;
  const dx=touch.clientX-start.x,dy=touch.clientY-start.y;
- if(Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.5)return;
- e.preventDefault();
+ if(Math.abs(dx)<50||Math.abs(dx)<Math.abs(dy)*1.2)return;
+ if(e.cancelable)e.preventDefault();
+ swipeClickUntil=Date.now()+600;
  switchGroup(dx<0?1:-1);
 },{passive:false});
 groupContent.addEventListener('touchcancel',()=>{groupGesture=null},{passive:true});
+groupContent.addEventListener('click',e=>{
+ if(Date.now()<swipeClickUntil){e.preventDefault();e.stopImmediatePropagation()}
+},true);
 function renderStats(){const {from,to}=currentBounds();const invalid=from>to;const rows=invalid?[]:byTimer(from,to),sum=rows.reduce((n,r)=>n+r.ms,0),items=invalid?[]:state.entries.map(e=>({e,ms:entryInRange(e,from,to)})).filter(x=>x.ms>0).sort((a,b)=>(b.e.manualDay?dayStart(b.e.manualDay).getTime():Math.max(...b.e.segments.map(s=>s[1]),0))-(a.e.manualDay?dayStart(a.e.manualDay).getTime():Math.max(...a.e.segments.map(s=>s[1]),0)));let chart='';if(!invalid&&rangeDayCount(from,to)<=31){let ds=[],d=from;while(d<=to){ds.push({day:d,ms:totalRange(d,d)});d=addDays(d,1)}const max=Math.max(1,...ds.map(x=>x.ms)),dense=ds.length>14;chart=`<section class="stats-section"><div class="section-title"><h2>По дням</h2><span>${esc(rangeLabel(from,to))}</span></div><div class="chart" role="img" aria-label="Время по дням">${ds.map((x,i)=>`<div class="chart-col ${x.day===ui.day?'selected':''}" title="${esc(dateLabel(x.day))}: ${esc(duration(x.ms))}"><div class="bar-wrap"><div class="bar" style="height:${x.ms?Math.max(3,Math.round(x.ms/max*100)):2}%"></div></div><span>${!dense||i===0||i===ds.length-1||i%5===0?dayStart(x.day).getDate():''}</span></div>`).join('')}</div></section>`}
 return `<section class="summary"><div><div class="eyebrow">ВАШИ СОХРАНЁННЫЕ ЗАПИСИ</div><h1>Статистика<span style="color:var(--accent)">.</span></h1></div><button class="add-text" data-action="manual">${icon('plus',15)} Добавить время</button></section><div class="segmented">${[['day','День'],['week','Неделя'],['month','Месяц'],['range','Период']].map(([v,l])=>`<button data-period="${v}" class="${ui.period===v?'active':''}">${l}</button>`).join('')}</div>${ui.period==='range'?`<div class="range-box"><label>С <input type="date" data-range="from" value="${esc(ui.from)}"></label><label>По <input type="date" data-range="to" value="${esc(ui.to)}"></label></div>`:''}${invalid?'<div class="range-warning">Дата начала должна быть раньше даты окончания.</div>':''}<div class="stat-hero"><div class="eyebrow">${invalid?'ВЫБЕРИТЕ ПЕРИОД':esc(rangeLabel(from,to))}</div><strong>${duration(sum)}</strong><p>Сумма сохранённых таймеров · ${items.length} ${items.length===1?'запись':items.length>1&&items.length<5?'записи':'записей'}</p></div>${chart}<section class="stats-section"><div class="section-title"><h2>По таймерам</h2><span>${rows.length} ${rows.length===1?'таймер':'таймеров'}</span></div><div class="stat-list">${rows.length?rows.map(x=>`<div class="stat-item" style="--timer-color:${esc(x.color)}"><div class="stat-top"><span class="dot"></span><div class="name">${esc(x.name)}<small>${esc(x.group)}</small></div><strong>${duration(x.ms)}</strong></div><div class="track"><div style="width:${sum?Math.max(2,x.ms/sum*100):0}%"></div></div></div>`).join(''):'<div class="empty"><strong>Здесь пока пусто</strong><p>Запустите таймер и сохраните время, чтобы оно появилось в статистике.</p></div>'}</div></section>${items.length?`<section class="stats-section"><div class="section-title"><h2>Записи</h2><span>за выбранный период</span></div><div class="entry-list">${items.map(({e,ms})=>`<div class="entry"><span class="dot" style="--timer-color:${esc(e.color)}"></span><div class="entry-info"><strong>${esc(e.name)}</strong><small>${e.manualDay?'Вручную · '+esc(dateLabel(e.manualDay,{day:'numeric',month:'short'})):esc(entryDescription(e,from,to))}</small></div><span class="entry-duration">${duration(ms)}</span><button class="entry-delete" data-delete-entry="${esc(e.id)}" aria-label="Удалить запись ${esc(e.name)}">${icon('trash',17)}</button></div>`).join('')}</div></section>`:''}<p class="note">В статистику попадает только сохранённое время. Если таймеры шли одновременно, их время суммируется.</p>`}
 function entryDescription(e,from,to){const first=e.segments[0]?.[0],last=e.segments[e.segments.length-1]?.[1];if(first==null)return 'Сохранено';const fmt=x=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(x));return `${fmt(first)} — ${fmt(last)}`}
