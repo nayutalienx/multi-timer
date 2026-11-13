@@ -30,7 +30,12 @@ const code = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/scri
 vm.runInContext(code, context);
 const run = code => vm.runInContext(code, context);
 assert.equal(run('ui.group'), 'Общее');
-assert(element('.brand b').innerHTML.includes('v1.2.1'));
+assert(element('.brand b').innerHTML.includes('v1.3.0'));
+assert.equal(run('timerStart({segments:[],runningSince:null})'), null);
+assert.equal(run('timerStart({segments:[],runningSince:5000})'), 5000);
+assert.equal(run('timerStart({segments:[[1000,2000]],runningSince:5000})'), 1000);
+assert.equal(run('timerStart({segments:[[1000,2000]],runningSince:null})'), 1000);
+assert.equal(run('timerStartLabel({segments:[],runningSince:null})'), 'Ещё не запускался');
 assert.equal(run('groups().length'), 4);
 assert(!element('content').innerHTML.includes('data-group="Все"'));
 assert(element('content').innerHTML.includes('data-reset='));
@@ -48,7 +53,10 @@ assert.equal(run('ui.group'), 'Воздух');
 assert(element('content').innerHTML.includes('Открытое окно'));
 swipe(100);
 assert.equal(run('ui.group'), 'Общее');
-swipe(100); // No wrap at the boundary.
+swipe(100); // Wrap from the first to the last group.
+assert.equal(run('ui.group'), 'Еда');
+swipe(-100); // Wrap from the last to the first group.
+assert.equal(run('ui.group'), 'Общее');
 swipe(-60, 100); // Vertical scrolling is not a group switch.
 swipe(-100, 0, 'input'); // Inputs ignore group gestures.
 assert.equal(run('ui.group'), 'Общее');

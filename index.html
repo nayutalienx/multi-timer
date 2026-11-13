@@ -20,6 +20,9 @@
 #content{touch-action:pan-y;min-height:calc(100dvh - 160px)}
 .tabs-scroll{touch-action:pan-y}
 .app-version{color:var(--muted);font-size:10px;font-weight:400;margin-left:5px;white-space:nowrap}
+.timer-start{font-size:9px;color:var(--muted);line-height:1.3;margin-top:3px;white-space:nowrap}
+.timer-viewport{position:relative;overflow:hidden}
+.carousel-outgoing{position:absolute;inset:0 0 auto;pointer-events:none}
 .action.reset-action{background:#333;color:var(--red);min-width:31px;padding:2px 5px}
 @media(max-width:380px){.timer-card{grid-template-areas:"head head" "time time" "actions actions"}.timer-actions{justify-content:flex-end}.time-row{padding:3px 0}}
 </style>
@@ -36,7 +39,7 @@
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
-const APP_VERSION='1.2.1';
+const APP_VERSION='1.3.0';
 document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
@@ -70,6 +73,14 @@ function rangeLabel(from,to){return from===to?dateLabel(from,{day:'numeric',mont
 function rangeDayCount(from,to){let n=0,x=from;while(x<=to&&n<=32){n++;x=addDays(x,1)}return n}
 function renderDate(){document.getElementById('date-title').textContent=niceDay(ui.day);document.getElementById('date-subtitle').textContent=dateLabel(ui.day,{weekday:'long',day:'numeric',month:'long',year:'numeric'});document.getElementById('selected-date').value=ui.day;document.getElementById('today-btn').classList.toggle('hidden',ui.day===dayKey());document.getElementById('network-status').textContent=navigator.onLine?'Данные на устройстве':'Нет сети · всё работает'}
 function groups(){return [...new Set(state.timers.map(t=>t.group))]}
+function timerStart(t){return t.segments[0]?.[0]??t.runningSince}
+function timerStartLabel(t){
+ const start=timerStart(t);
+ if(start==null)return 'Ещё не запускался';
+ const options={hour:'2-digit',minute:'2-digit'};
+ if(dayKey(start)!==dayKey()){options.day='numeric';options.month='short'}
+ return 'Начат '+new Intl.DateTimeFormat('ru-RU',options).format(new Date(start));
+}
 function renderTimers(){
  const available=groups();
  if(!available.includes(ui.group))ui.group=available[0]||null;
@@ -77,18 +88,40 @@ function renderTimers(){
  return `<section class="summary"><div><div class="eyebrow">ВАШ ЛИЧНЫЙ УЧЁТ</div><h1>Мои таймеры<span style="color:var(--accent)">.</span></h1></div><div class="summary-side"><strong>${duration(sum)}</strong><small>сохранено ${ui.day===dayKey()?'сегодня':'за день'}</small></div></section>
  <div class="tabs-scroll" aria-label="Группы">${available.map(g=>`<button class="chip ${ui.group===g?'active':''}" data-group="${esc(g)}">${esc(g)}</button>`).join('')}</div>
  <div class="list-head"><span>${esc(ui.group||'Таймеры')} · ${visible.length}</span><button class="add-text" data-action="add-timer">${icon('plus',15)} Добавить</button></div>
- <div class="timer-list">${visible.length?visible.map(t=>{
+ <div class="timer-viewport"><div class="timer-list">${visible.length?visible.map(t=>{
   const v=elapsed(t,now),d=state.entries.filter(e=>e.timerId===t.id).reduce((n,e)=>n+entryInRange(e,ui.day,ui.day),0);
   return `<article class="timer-card ${t.runningSince!==null?'running':''}" style="--timer-color:${esc(t.color)}"><div class="timer-head"><span class="dot"></span><span class="timer-name">${esc(t.name)}</span><span class="timer-status ${t.runningSince!==null?'live':''}">${t.runningSince!==null?'● ИДЁТ':'НА ПАУЗЕ'}</span><button class="menu-btn" data-menu="${esc(t.id)}" aria-label="Действия: ${esc(t.name)}">${icon('more',21)}</button></div>
-  <div class="time-row"><div class="clock" data-clock="${esc(t.id)}">${duration(v,true)}</div><div class="counted">за ${ui.day===dayKey()?'сегодня':'день'}<b>${duration(d)}</b></div></div>
+  <div class="time-row"><div><div class="clock" data-clock="${esc(t.id)}">${duration(v,true)}</div><div class="timer-start">${esc(timerStartLabel(t))}</div></div><div class="counted">за ${ui.day===dayKey()?'сегодня':'день'}<b>${duration(d)}</b></div></div>
   <div class="timer-actions"><button class="action ${t.runningSince!==null?'pause-action':'primary-action'}" data-toggle="${esc(t.id)}">${icon(t.runningSince!==null?'pause':'play',16)} ${t.runningSince!==null?'Пауза':'Старт'}</button><button class="action save-action" data-save="${esc(t.id)}" ${v<1000?'disabled':''}>${icon('save',16)} Сохранить</button><button class="action reset-action" data-reset="${esc(t.id)}" title="Сбросить без сохранения" aria-label="Сбросить без сохранения: ${esc(t.name)}">${icon('reset',16)}</button></div></article>`;
- }).join(''):`<div class="empty"><strong>Пока нет таймеров</strong><p>Добавьте таймер для работы, прогулок или любого другого занятия.</p></div>`}</div><p class="note">Время попадёт в статистику после нажатия «Сохранить». Таймеры могут идти одновременно.</p>`;
+ }).join(''):`<div class="empty"><strong>Пока нет таймеров</strong><p>Добавьте таймер для работы, прогулок или любого другого занятия.</p></div>`}</div></div><p class="note">Время попадёт в статистику после нажатия «Сохранить». Таймеры могут идти одновременно.</p>`;
 }
+let carouselCleanup=null;
 function switchGroup(direction){
- const available=groups(),index=available.indexOf(ui.group),next=index+direction;
- if(index<0||next<0||next>=available.length)return;
+ const available=groups(),index=available.indexOf(ui.group);
+ if(index<0||available.length<2)return;
+ const next=(index+direction+available.length)%available.length;
+ if(carouselCleanup)carouselCleanup();
+ const previous=document.querySelector('.timer-list');
+ const animate=typeof previous?.animate==='function'&&!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+ const outgoing=animate?previous.cloneNode(true):null;
+ const oldHeight=animate?previous.offsetHeight:0;
  ui.group=available[next];render();
  document.querySelector('.chip.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
+ if(!outgoing)return;
+ const viewport=document.querySelector('.timer-viewport'),incoming=viewport.querySelector('.timer-list');
+ viewport.style.minHeight=Math.max(oldHeight,incoming.offsetHeight)+'px';
+ outgoing.classList.add('carousel-outgoing');
+ outgoing.setAttribute('aria-hidden','true');outgoing.inert=true;
+ viewport.append(outgoing);
+ const options={duration:240,easing:'cubic-bezier(.2,.75,.25,1)'};
+ const enter=incoming.animate([{transform:`translateX(${direction*100}%)`},{transform:'translateX(0)'}],options);
+ const exit=outgoing.animate([{transform:'translateX(0)'},{transform:`translateX(${-direction*100}%)`}],options);
+ const cleanup=()=>{
+  if(carouselCleanup!==cleanup)return;
+  carouselCleanup=null;enter.cancel();exit.cancel();outgoing.remove();viewport.style.minHeight='';
+ };
+ carouselCleanup=cleanup;
+ enter.finished.then(cleanup,cleanup);
 }
 let groupGesture=null,swipeClickUntil=0;
 const groupContent=document.getElementById('content');

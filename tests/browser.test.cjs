@@ -22,7 +22,13 @@ const assert = require('node:assert/strict');
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.locator('.app-version').waitFor();
-    assert.equal(await page.locator('.app-version').textContent(), 'v1.2.1');
+    assert.equal(await page.locator('.app-version').textContent(), 'v1.3.0');
+    assert.equal(await page.locator('.timer-start').first().textContent(), 'Ещё не запускался');
+    await page.locator('[data-toggle]').first().click();
+    assert.match(await page.locator('.timer-start').first().textContent(), /^Начат \d{2}:\d{2}$/);
+    const startLabel = await page.locator('.timer-start').first().textContent();
+    await page.locator('[data-toggle]').first().click();
+    assert.equal(await page.locator('.timer-start').first().textContent(), startLabel);
     const cdp = await page.context().newCDPSession(page);
     async function drag(x, y, dx, dy) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
@@ -32,11 +38,17 @@ const assert = require('node:assert/strict');
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     }
     const active = () => page.locator('.chip.active').textContent();
+    const tabs = await page.locator('.tabs-scroll').boundingBox();
     assert.equal(await active(), 'Общее');
+    await drag(90, tabs.y + 10, 140, 10);
+    assert.equal(await active(), 'Еда');
+    assert(await page.locator('.carousel-outgoing').count() > 0);
+    await drag(260, tabs.y + 10, -140, 10);
+    assert.equal(await active(), 'Общее');
+    await page.waitForFunction(() => !document.querySelector('.carousel-outgoing'));
     const card = await page.locator('.timer-card').first().boundingBox();
     await drag(260, card.y + 30, -140, 40);
     assert.equal(await active(), 'Воздух');
-    const tabs = await page.locator('.tabs-scroll').boundingBox();
     await drag(90, tabs.y + 10, 140, 10);
     assert.equal(await active(), 'Общее');
     // Swiping across a start button must not accidentally start a timer.
