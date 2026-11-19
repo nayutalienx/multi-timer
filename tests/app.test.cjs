@@ -30,7 +30,7 @@ const code = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/scri
 vm.runInContext(code, context);
 const run = code => vm.runInContext(code, context);
 assert.equal(run('ui.group'), 'Общее');
-assert(element('.brand b').innerHTML.includes('v1.5.0'));
+assert(element('.brand b').innerHTML.includes('v1.6.0'));
 assert.equal(run('timerStart({segments:[],runningSince:null})'), null);
 assert.equal(run('timerStart({segments:[],runningSince:5000})'), 5000);
 assert.equal(run('timerStart({segments:[[1000,2000]],runningSince:5000})'), 1000);
@@ -128,5 +128,10 @@ assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-mark"/g)|
 run(`timelinePeriod='month'`);
 assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-mark"/g)||[]).length`), 30);
 assert.equal(run(`ui.period`), 'day');
+run(`hiddenTracks.add('a')`);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-row timeline-track"/g)||[]).length`), 1);
+assert.match(run(`renderTimeline(stamp(19,10))`), /Дорожки · 1 из 2/);
+run(`hiddenTracks.add('b')`);
+assert.match(run(`renderTimeline(stamp(19,10))`), /Все дорожки скрыты/);
 new vm.Script(readFileSync('sw.js', 'utf8'));
 console.log('PASS: timer regressions and day/week/month timeline, midnight, ongoing and unsaved intervals');

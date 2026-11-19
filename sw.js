@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'moyo-vremya-v1.5.0';
+const CACHE = 'moyo-vremya-v1.6.0';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', event => {

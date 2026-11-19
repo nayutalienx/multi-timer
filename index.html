@@ -36,6 +36,12 @@
 .timeline-clip.ongoing{background:repeating-linear-gradient(135deg,var(--color) 0 7px,#eee 7px 9px)}
 .timeline-clip[aria-pressed="true"],.timeline-clip:focus-visible{outline:2px solid white;outline-offset:-2px;z-index:3}
 .timeline-detail{display:block;min-height:2.5em;margin:5px 0;color:var(--muted);font-size:11px}
+.timeline-filter{border:1px solid var(--line);background:var(--panel);margin:0 0 5px}
+.timeline-filter summary{cursor:pointer;padding:7px;font-size:12px}
+.timeline-filter-list{display:grid;gap:2px;padding:0 6px 6px}
+.timeline-filter-list label{display:flex;align-items:center;gap:6px;min-height:32px;padding:2px 4px;background:var(--panel2);overflow-wrap:anywhere}
+.timeline-filter-list input{accent-color:var(--accent);flex:none}
+.timeline-filter-list button{justify-self:start;padding:5px;background:var(--panel2)}
 .timeline-range{font-size:10px;color:var(--muted)}
 #timeline-periods{grid-template-columns:repeat(3,1fr)}
 .timer-start{font-size:9px;color:var(--muted);line-height:1.3;margin-top:3px;white-space:nowrap}
@@ -57,7 +63,7 @@
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
-const APP_VERSION='1.5.0';
+const APP_VERSION='1.6.0';
 document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
@@ -198,7 +204,7 @@ function timelineTracks(start,end,now=Date.now()){
  for(const entry of state.entries){
   if(!entry.manualDay)for(const [from,to] of entry.segments)add(entry.timerId,entry,from,to);
  }
- return [...tracks.values()].map(({timer,intervals})=>{
+ return [...tracks.entries()].map(([id,{timer,intervals}])=>{
   const merged=[];
   for(const interval of intervals.sort((a,b)=>a.from-b.from)){
    const previous=merged[merged.length-1];
@@ -211,15 +217,41 @@ function timelineTracks(start,end,now=Date.now()){
    if(right<=left&&!(to===null&&right===left&&from>=start&&from<end))return [];
    return [{from,to,left,right}];
   });
-  return {timer,clips};
+  return {id,timer,clips};
  }).filter(track=>track.clips.length);
 }
 const timelineClock=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'});
 const timelineStamp=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const timelinePeriods=[['day','День'],['week','Неделя'],['month','Месяц']];
 let timelinePeriod='day';
+const TIMELINE_HIDDEN_KEY='moyo-vremya-timeline-hidden-v1';
+const hiddenTracks=new Set();
+try{
+ const ids=JSON.parse(localStorage.getItem(TIMELINE_HIDDEN_KEY));
+ if(Array.isArray(ids))for(const id of ids)if(typeof id==='string')hiddenTracks.add(id);
+}catch{}
+function updateHiddenTracks(){
+ try{localStorage.setItem(TIMELINE_HIDDEN_KEY,JSON.stringify([...hiddenTracks]))}catch{}
+ render();
+}
+document.getElementById('content').addEventListener('change',e=>{
+ if(ui.view!=='timeline'||!e.target.matches('[data-timeline-track]'))return;
+ const id=e.target.dataset.timelineTrack;
+ if(e.target.checked)hiddenTracks.delete(id);
+ else hiddenTracks.add(id);
+ updateHiddenTracks();
+ for(const box of document.querySelectorAll('[data-timeline-track]')){
+  if(box.dataset.timelineTrack===id){box.focus({preventScroll:true});break}
+ }
+});
 document.getElementById('content').addEventListener('click',e=>{
  if(ui.view!=='timeline')return;
+ if(e.target.closest('[data-timeline-show-all]')){
+  hiddenTracks.clear();
+  updateHiddenTracks();
+  document.querySelector('.timeline-filter summary')?.focus({preventScroll:true});
+  return;
+ }
  const clip=e.target.closest('[data-timeline-clip]');
  if(clip){
   document.querySelector('.timeline-clip[aria-pressed="true"]')?.setAttribute('aria-pressed','false');
@@ -243,11 +275,17 @@ function renderTimeline(now=Date.now()){
    ticks.push([dayStart(day).getTime(),dateLabel(day,{day:'numeric',month:'short'})]);
   }
  }
- const tracks=timelineTracks(start,end,now);
+ const allTracks=timelineTracks(start,end,now),tracks=allTracks.filter(track=>!hiddenTracks.has(track.id));
  const firstClip=tracks.reduce((first,track)=>Math.min(first,track.clips[0].left),end);
  const anchor=timelinePeriod==='day'?(tracks.length?Math.max(start,firstClip-3600000):start):dayStart(ui.day).getTime();
  return `<section class="summary"><h1>Таймлайн<span style="color:var(--accent)">.</span></h1><span class="timeline-range">${esc(rangeLabel(from,to))}</span></section>
  <div class="segmented" id="timeline-periods" aria-label="Период таймлайна">${timelinePeriods.map(([value,label])=>`<button data-timeline-period="${value}" class="${value===timelinePeriod?'active':''}" aria-pressed="${value===timelinePeriod}">${label}</button>`).join('')}</div>
+ ${allTracks.length||hiddenTracks.size?`<details class="timeline-filter">
+ <summary>Дорожки · ${tracks.length} из ${allTracks.length}</summary>
+ <div class="timeline-filter-list">
+ ${allTracks.map(({id,timer})=>`<label><input type="checkbox" data-timeline-track="${esc(id)}" ${hiddenTracks.has(id)?'':'checked'}><span class="dot" style="--timer-color:${esc(timer.color)}" aria-hidden="true"></span><span>${esc(timer.name)} · ${esc(timer.group)}</span></label>`).join('')}
+ ${hiddenTracks.size?'<button type="button" data-timeline-show-all>Показать все дорожки</button>':''}
+ </div></details>`:''}
  <div class="timeline-scroll" role="region" aria-label="Дорожки таймеров, горизонтальная прокрутка" tabindex="0" data-range="${timelinePeriod}:${from}:${to}" data-anchor="${percent(anchor-start)}">
  <div class="timeline-board" style="--scale-width:${ticks.length*({day:60,week:160,month:80}[timelinePeriod])}px">
  <div class="timeline-grid" aria-hidden="true">${ticks.map(([time])=>`<i style="--at:${percent(time-start)}%"></i>`).join('')}</div>
@@ -259,6 +297,7 @@ function renderTimeline(now=Date.now()){
  }).join('')}</div></div>`).join('')}
  </div></div>
  ${tracks.length?'<output id="timeline-detail" class="timeline-detail" aria-live="polite">Прокручивайте шкалу вбок. Нажмите на отрезок, чтобы увидеть точное время.</output>':
+ allTracks.length?'<div class="empty"><strong>Все дорожки скрыты</strong><p>Верните нужные дорожки в списке над шкалой.</p></div>':
  '<div class="empty"><strong>Нет отсчётов за этот период</strong><p>Здесь появятся отрезки работы таймеров.</p></div>'}
  <p class="note">Показаны сохранённые и несохранённые отсчёты. Ручные записи без времени начала и конца не отображаются.</p>`;
 }
@@ -267,8 +306,11 @@ function render(){
  const content=document.getElementById('content');
  const previousTimeline=ui.view==='timeline'?content.querySelector?.('.timeline-scroll'):null;
  const previousLeft=previousTimeline?.scrollLeft;
+ const filterOpen=ui.view==='timeline'&&content.querySelector?.('.timeline-filter')?.open;
  content.innerHTML=ui.view==='timers'?renderTimers():ui.view==='timeline'?renderTimeline():renderStats();
  if(ui.view==='timeline'){
+  const filter=content.querySelector?.('.timeline-filter');
+  if(filter&&filterOpen)filter.open=true;
   const scroll=content.querySelector?.('.timeline-scroll');
   if(scroll){
    const lane=scroll.querySelector('.timeline-ruler .timeline-lane');
