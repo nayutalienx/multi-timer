@@ -20,13 +20,22 @@
 #content{touch-action:pan-y;min-height:calc(100dvh - 160px)}
 .tabs-scroll{touch-action:pan-y}
 .app-version{color:var(--muted);font-size:10px;font-weight:400;margin-left:5px;white-space:nowrap}
-.timeline{list-style:none;margin:0;padding:0}
-.timeline-event{display:grid;grid-template-columns:8ch 9px minmax(0,1fr);align-items:center;gap:7px;padding:6px;background:var(--panel);border:1px solid #414141;margin-bottom:2px}
-.timeline-event time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:11px}
-.timeline-event strong{display:block;overflow-wrap:anywhere;font-size:12px}
-.timeline-event small{display:block;color:var(--muted);font-size:10px}
-.timeline-event .timeline-start{color:var(--green)}
-.timeline-day h2{margin:9px 0 3px;font-size:12px;color:var(--muted)}
+.timeline-scroll{overflow-x:auto;touch-action:pan-x pan-y pinch-zoom;border:1px solid var(--line);background:#202020}
+.timeline-board{--label-width:clamp(86px,27vw,145px);position:relative;isolation:isolate;min-width:calc(var(--scale-width) + var(--label-width))}
+.timeline-row{display:grid;grid-template-columns:var(--label-width) minmax(0,1fr);min-height:36px;border-bottom:1px solid #383838}
+.timeline-label{position:sticky;left:0;z-index:3;min-width:0;padding:5px 7px;background:#292929;border-right:1px solid #555;font-size:11px;overflow-wrap:anywhere;align-content:center}
+.timeline-label small{display:block;color:var(--muted);font-size:9px}
+.timeline-ruler{min-height:29px;background:#2a2a2a}
+.timeline-lane{position:relative;min-width:0;overflow:hidden}
+.timeline-grid{position:absolute;inset:0 0 0 var(--label-width);pointer-events:none;z-index:1}
+.timeline-grid i,.timeline-mark{position:absolute;left:var(--at)}
+.timeline-grid i{top:0;bottom:0;border-left:1px solid #3c3c3c}
+.timeline-mark{top:7px;z-index:2;padding-left:4px;color:#ccc;font-size:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.timeline-clip{position:absolute;left:var(--at);width:var(--length);min-width:4px;top:5px;bottom:5px;z-index:2;background:var(--color);border:1px solid #0006;color:#161616;padding:0;overflow:hidden;white-space:nowrap;text-align:left;font-size:10px;font-weight:700;touch-action:manipulation}
+.timeline-clip span{padding:0 4px}
+.timeline-clip.ongoing{background:repeating-linear-gradient(135deg,var(--color) 0 7px,#eee 7px 9px)}
+.timeline-clip[aria-pressed="true"],.timeline-clip:focus-visible{outline:2px solid white;outline-offset:-2px;z-index:3}
+.timeline-detail{display:block;min-height:2.5em;margin:5px 0;color:var(--muted);font-size:11px}
 .timeline-range{font-size:10px;color:var(--muted)}
 #timeline-periods{grid-template-columns:repeat(3,1fr)}
 .timer-start{font-size:9px;color:var(--muted);line-height:1.3;margin-top:3px;white-space:nowrap}
@@ -48,7 +57,7 @@
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
-const APP_VERSION='1.4.0';
+const APP_VERSION='1.5.0';
 document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
@@ -175,70 +184,97 @@ groupContent.addEventListener('click',e=>{
 function renderStats(){const {from,to}=currentBounds();const invalid=from>to;const rows=invalid?[]:byTimer(from,to),sum=rows.reduce((n,r)=>n+r.ms,0),items=invalid?[]:state.entries.map(e=>({e,ms:entryInRange(e,from,to)})).filter(x=>x.ms>0).sort((a,b)=>(b.e.manualDay?dayStart(b.e.manualDay).getTime():Math.max(...b.e.segments.map(s=>s[1]),0))-(a.e.manualDay?dayStart(a.e.manualDay).getTime():Math.max(...a.e.segments.map(s=>s[1]),0)));let chart='';if(!invalid&&rangeDayCount(from,to)<=31){let ds=[],d=from;while(d<=to){ds.push({day:d,ms:totalRange(d,d)});d=addDays(d,1)}const max=Math.max(1,...ds.map(x=>x.ms)),dense=ds.length>14;chart=`<section class="stats-section"><div class="section-title"><h2>По дням</h2><span>${esc(rangeLabel(from,to))}</span></div><div class="chart" role="img" aria-label="Время по дням">${ds.map((x,i)=>`<div class="chart-col ${x.day===ui.day?'selected':''}" title="${esc(dateLabel(x.day))}: ${esc(duration(x.ms))}"><div class="bar-wrap"><div class="bar" style="height:${x.ms?Math.max(3,Math.round(x.ms/max*100)):2}%"></div></div><span>${!dense||i===0||i===ds.length-1||i%5===0?dayStart(x.day).getDate():''}</span></div>`).join('')}</div></section>`}
 return `<section class="summary"><div><div class="eyebrow">ВАШИ СОХРАНЁННЫЕ ЗАПИСИ</div><h1>Статистика<span style="color:var(--accent)">.</span></h1></div><button class="add-text" data-action="manual">${icon('plus',15)} Добавить время</button></section><div class="segmented">${[['day','День'],['week','Неделя'],['month','Месяц'],['range','Период']].map(([v,l])=>`<button data-period="${v}" class="${ui.period===v?'active':''}">${l}</button>`).join('')}</div>${ui.period==='range'?`<div class="range-box"><label>С <input type="date" data-range="from" value="${esc(ui.from)}"></label><label>По <input type="date" data-range="to" value="${esc(ui.to)}"></label></div>`:''}${invalid?'<div class="range-warning">Дата начала должна быть раньше даты окончания.</div>':''}<div class="stat-hero"><div class="eyebrow">${invalid?'ВЫБЕРИТЕ ПЕРИОД':esc(rangeLabel(from,to))}</div><strong>${duration(sum)}</strong><p>Сумма сохранённых таймеров · ${items.length} ${items.length===1?'запись':items.length>1&&items.length<5?'записи':'записей'}</p></div>${chart}<section class="stats-section"><div class="section-title"><h2>По таймерам</h2><span>${rows.length} ${rows.length===1?'таймер':'таймеров'}</span></div><div class="stat-list">${rows.length?rows.map(x=>`<div class="stat-item" style="--timer-color:${esc(x.color)}"><div class="stat-top"><span class="dot"></span><div class="name">${esc(x.name)}<small>${esc(x.group)}</small></div><strong>${duration(x.ms)}</strong></div><div class="track"><div style="width:${sum?Math.max(2,x.ms/sum*100):0}%"></div></div></div>`).join(''):'<div class="empty"><strong>Здесь пока пусто</strong><p>Запустите таймер и сохраните время, чтобы оно появилось в статистике.</p></div>'}</div></section>${items.length?`<section class="stats-section"><div class="section-title"><h2>Записи</h2><span>за выбранный период</span></div><div class="entry-list">${items.map(({e,ms})=>`<div class="entry"><span class="dot" style="--timer-color:${esc(e.color)}"></span><div class="entry-info"><strong>${esc(e.name)}</strong><small>${e.manualDay?'Вручную · '+esc(dateLabel(e.manualDay,{day:'numeric',month:'short'})):esc(entryDescription(e,from,to))}</small></div><span class="entry-duration">${duration(ms)}</span><button class="entry-delete" data-delete-entry="${esc(e.id)}" aria-label="Удалить запись ${esc(e.name)}">${icon('trash',17)}</button></div>`).join('')}</div></section>`:''}<p class="note">В статистику попадает только сохранённое время. Если таймеры шли одновременно, их время суммируется.</p>`}
 function entryDescription(e,from,to){const first=e.segments[0]?.[0],last=e.segments[e.segments.length-1]?.[1];if(first==null)return 'Сохранено';const fmt=x=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(x));return `${fmt(first)} — ${fmt(last)}`}
-function timelineEvents(day,now=Date.now()){
- const [start,end]=rangeMs(day,day),byId=new Map(),events=[];
- function add(timer,from,to){
-  if(from>=end||(to===null?now<Math.max(start,from):to<start))return;
-  if(!byId.has(timer.timerId))byId.set(timer.timerId,[]);
-  byId.get(timer.timerId).push({timer,from,to});
- }
- for(const entry of state.entries){
-  if(!entry.manualDay)for(const [from,to] of entry.segments)add(entry,from,to);
+function timelineTracks(start,end,now=Date.now()){
+ const tracks=new Map();
+ function add(id,timer,from,to){
+  if(!tracks.has(id))tracks.set(id,{timer,intervals:[]});
+  tracks.get(id).intervals.push({from,to});
  }
  for(const timer of state.timers){
-  const info={...timer,timerId:timer.id};
-  for(const [from,to] of timer.segments)add(info,from,to);
-  if(timer.runningSince!==null)add(info,timer.runningSince,null);
+  tracks.set(timer.id,{timer,intervals:[]});
+  for(const [from,to] of timer.segments)add(timer.id,timer,from,to);
+  if(timer.runningSince!==null&&timer.runningSince<=now)add(timer.id,timer,timer.runningSince,null);
  }
- function emit({timer,from,to}){
-  if(from>=start||to!==start){
-   const active=to===null&&now>=start&&now<end;
-   events.push({time:Math.max(from,start),type:from<start?'carry':'start',timer,active});
-  }
-  if(to!==null&&to>=start&&to<end)events.push({time:to,type:'stop',timer,active:false});
+ for(const entry of state.entries){
+  if(!entry.manualDay)for(const [from,to] of entry.segments)add(entry.timerId,entry,from,to);
  }
- for(const intervals of byId.values()){
-  intervals.sort((a,b)=>a.from-b.from||(a.to??Infinity)-(b.to??Infinity));
-  let previous=null;
-  for(const interval of intervals){
-   // Saving a running timer creates two segments that meet at the save time.
+ return [...tracks.values()].map(({timer,intervals})=>{
+  const merged=[];
+  for(const interval of intervals.sort((a,b)=>a.from-b.from)){
+   const previous=merged[merged.length-1];
+   // A save splits a running timer into adjacent intervals, not two clips.
    if(previous&&previous.to===interval.from)previous.to=interval.to;
-   else{if(previous)emit(previous);previous=interval}
+   else merged.push(interval);
   }
-  if(previous)emit(previous);
- }
- return events.sort((a,b)=>a.time-b.time);
+  const clips=merged.flatMap(({from,to})=>{
+   const left=Math.max(start,from),right=Math.min(end,to??now);
+   if(right<=left&&!(to===null&&right===left&&from>=start&&from<end))return [];
+   return [{from,to,left,right}];
+  });
+  return {timer,clips};
+ }).filter(track=>track.clips.length);
 }
-const timelineClock=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const timelineClock=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit'});
+const timelineStamp=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const timelinePeriods=[['day','День'],['week','Неделя'],['month','Месяц']];
 let timelinePeriod='day';
 document.getElementById('content').addEventListener('click',e=>{
+ if(ui.view!=='timeline')return;
+ const clip=e.target.closest('[data-timeline-clip]');
+ if(clip){
+  document.querySelector('.timeline-clip[aria-pressed="true"]')?.setAttribute('aria-pressed','false');
+  clip.setAttribute('aria-pressed','true');
+  document.getElementById('timeline-detail').textContent=clip.dataset.timelineClip;
+  return;
+ }
  const period=e.target.closest('[data-timeline-period]')?.dataset.timelinePeriod;
- if(ui.view!=='timeline'||!timelinePeriods.some(([value])=>value===period))return;
+ if(!timelinePeriods.some(([value])=>value===period)||period===timelinePeriod)return;
  timelinePeriod=period;
  render();
  document.querySelector(`[data-timeline-period="${period}"]`)?.focus({preventScroll:true});
 });
 function renderTimeline(now=Date.now()){
- const {from,to}=currentBounds(timelinePeriod),days=[];
- for(let day=from;day<=to;day=addDays(day,1)){
-  const events=timelineEvents(day,now);
-  if(events.length)days.push({day,events});
+ const {from,to}=currentBounds(timelinePeriod),[start,end]=rangeMs(from,to),ticks=[];
+ const percent=ms=>100*ms/(end-start);
+ if(timelinePeriod==='day'){
+  for(let time=start;time<end;time+=3600000)ticks.push([time,timelineClock.format(time)]);
+ }else{
+  for(let day=from;day<=to;day=addDays(day,1)){
+   ticks.push([dayStart(day).getTime(),dateLabel(day,{day:'numeric',month:'short'})]);
+  }
  }
- const labels={start:'Старт',stop:'Стоп',carry:'Продолжался с прошлого дня'};
+ const tracks=timelineTracks(start,end,now);
+ const firstClip=tracks.reduce((first,track)=>Math.min(first,track.clips[0].left),end);
+ const anchor=timelinePeriod==='day'?(tracks.length?Math.max(start,firstClip-3600000):start):dayStart(ui.day).getTime();
  return `<section class="summary"><h1>Таймлайн<span style="color:var(--accent)">.</span></h1><span class="timeline-range">${esc(rangeLabel(from,to))}</span></section>
  <div class="segmented" id="timeline-periods" aria-label="Период таймлайна">${timelinePeriods.map(([value,label])=>`<button data-timeline-period="${value}" class="${value===timelinePeriod?'active':''}" aria-pressed="${value===timelinePeriod}">${label}</button>`).join('')}</div>
- ${days.length?days.map(({day,events})=>`<section class="timeline-day">
- ${timelinePeriod==='day'?'':`<h2>${esc(dateLabel(day,{weekday:'long',day:'numeric',month:'long'}))}</h2>`}
- <ol class="timeline">${events.map(({time,type,timer,active})=>`<li class="timeline-event">
- <time>${timelineClock.format(time)}</time><span class="dot" style="--timer-color:${esc(timer.color)}" aria-hidden="true"></span>
- <div><strong>${esc(timer.name)}</strong><small><span class="${type==='stop'?'':'timeline-start'}">${labels[type]}${active?' · идёт сейчас':''}</span> · ${esc(timer.group)}</small></div></li>`).join('')}</ol></section>`).join(''):
- '<div class="empty"><strong>Нет событий за этот период</strong><p>Здесь появятся запуски и остановки таймеров.</p></div>'}
- <p class="note">Сохранённые и текущие отсчёты. Время, добавленное вручную, не отображается: у него нет точного времени начала и конца. Сброс удаляет несохранённые события.</p>`;
+ <div class="timeline-scroll" role="region" aria-label="Дорожки таймеров, горизонтальная прокрутка" tabindex="0" data-range="${timelinePeriod}:${from}:${to}" data-anchor="${percent(anchor-start)}">
+ <div class="timeline-board" style="--scale-width:${ticks.length*({day:60,week:160,month:80}[timelinePeriod])}px">
+ <div class="timeline-grid" aria-hidden="true">${ticks.map(([time])=>`<i style="--at:${percent(time-start)}%"></i>`).join('')}</div>
+ <div class="timeline-row timeline-ruler"><div class="timeline-label">Таймер</div><div class="timeline-lane">${ticks.map(([time,label])=>`<span class="timeline-mark" style="--at:${percent(time-start)}%">${esc(label)}</span>`).join('')}</div></div>
+ ${tracks.map(({timer,clips})=>`<div class="timeline-row timeline-track"><div class="timeline-label"><strong>${esc(timer.name)}</strong><small>${esc(timer.group)}</small></div><div class="timeline-lane">
+ ${clips.map(({from,to,left,right})=>{
+  const details=`${timer.name}: ${timelineStamp.format(from)} → ${to===null?'идёт сейчас':timelineStamp.format(to)}`;
+  return `<button class="timeline-clip${to===null?' ongoing':''}" style="--at:${percent(left-start)}%;--length:${percent(right-left)}%;--color:${esc(timer.color)}" data-timeline-clip="${esc(details)}" aria-label="${esc(details)}" title="${esc(details)}" aria-pressed="false"><span>${esc(timelineClock.format(from))}</span></button>`;
+ }).join('')}</div></div>`).join('')}
+ </div></div>
+ ${tracks.length?'<output id="timeline-detail" class="timeline-detail" aria-live="polite">Прокручивайте шкалу вбок. Нажмите на отрезок, чтобы увидеть точное время.</output>':
+ '<div class="empty"><strong>Нет отсчётов за этот период</strong><p>Здесь появятся отрезки работы таймеров.</p></div>'}
+ <p class="note">Показаны сохранённые и несохранённые отсчёты. Ручные записи без времени начала и конца не отображаются.</p>`;
 }
 function render(){
  renderDate();
- document.getElementById('content').innerHTML=ui.view==='timers'?renderTimers():ui.view==='timeline'?renderTimeline():renderStats();
+ const content=document.getElementById('content');
+ const previousTimeline=ui.view==='timeline'?content.querySelector?.('.timeline-scroll'):null;
+ const previousLeft=previousTimeline?.scrollLeft;
+ content.innerHTML=ui.view==='timers'?renderTimers():ui.view==='timeline'?renderTimeline():renderStats();
+ if(ui.view==='timeline'){
+  const scroll=content.querySelector?.('.timeline-scroll');
+  if(scroll){
+   const lane=scroll.querySelector('.timeline-ruler .timeline-lane');
+   scroll.scrollLeft=previousTimeline?.dataset.range===scroll.dataset.range?previousLeft:lane.clientWidth*Number(scroll.dataset.anchor)/100;
+  }
+ }
  for(const view of ['timers','stats','timeline'])document.getElementById(`${view}-nav`).classList.toggle('active',ui.view===view);
  document.getElementById('fab').classList.toggle('hidden',ui.view!=='timers');
  if(!storageOK)document.getElementById('storage-warning').innerHTML='<div class="storage-alert">Не удалось прочитать данные на устройстве. Не закрывайте страницу, пока не проверите настройки браузера.</div>';

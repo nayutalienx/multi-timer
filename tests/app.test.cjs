@@ -30,7 +30,7 @@ const code = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/scri
 vm.runInContext(code, context);
 const run = code => vm.runInContext(code, context);
 assert.equal(run('ui.group'), 'Общее');
-assert(element('.brand b').innerHTML.includes('v1.4.0'));
+assert(element('.brand b').innerHTML.includes('v1.5.0'));
 assert.equal(run('timerStart({segments:[],runningSince:null})'), null);
 assert.equal(run('timerStart({segments:[],runningSince:5000})'), 5000);
 assert.equal(run('timerStart({segments:[[1000,2000]],runningSince:5000})'), 1000);
@@ -115,18 +115,18 @@ run(`
  ];
  ui.day='2026-11-18';ui.view='timeline';render();
 `);
-assert.equal(run(`timelineEvents(ui.day,stamp(18,10)).map(e=>e.type+':'+e.timer.name).join(',')`),
-  'carry:Работа,start:Прогулка,stop:Работа,stop:Прогулка,start:Работа');
-assert.equal(run(`timelineEvents(ui.day,stamp(18,10)).filter(e=>e.active).length`), 1);
-assert.equal(run(`timelineEvents('2026-11-17',stamp(18,10)).map(e=>e.type).join(',')`), 'start');
-assert.equal(run(`timelineEvents('2026-11-19',stamp(18,10)).length`), 0);
+assert.equal(run(`timelineTracks(stamp(18,0),stamp(19,0),stamp(18,10)).map(t=>t.timer.name+':'+t.clips.length).join(',')`), 'Работа:2,Прогулка:1');
+assert.equal(run(`timelineTracks(stamp(18,0),stamp(19,0),stamp(18,10))[0].clips[0].left`), run('stamp(18,0)'));
+assert.equal(run(`timelineTracks(stamp(17,0),stamp(18,0),stamp(18,10))[0].clips[0].from`), run('stamp(17,22)'));
+assert.equal(run(`timelineTracks(stamp(18,0),stamp(19,0),stamp(18,10))[0].clips[1].to`), null);
+assert.equal(run(`timelineTracks(stamp(19,0),stamp(20,0),stamp(18,10)).length`), 0);
 assert.equal(run(`currentBounds('week').from`), '2026-11-16');
 assert.equal(run(`currentBounds('month').to`), '2026-11-30');
-assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 1);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-mark"/g)||[]).length`), 24);
 run(`timelinePeriod='week'`);
-assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 3);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-mark"/g)||[]).length`), 7);
 run(`timelinePeriod='month'`);
-assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 4);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-mark"/g)||[]).length`), 30);
 assert.equal(run(`ui.period`), 'day');
 new vm.Script(readFileSync('sw.js', 'utf8'));
 console.log('PASS: timer regressions and day/week/month timeline, midnight, ongoing and unsaved intervals');
