@@ -20,6 +20,15 @@
 #content{touch-action:pan-y;min-height:calc(100dvh - 160px)}
 .tabs-scroll{touch-action:pan-y}
 .app-version{color:var(--muted);font-size:10px;font-weight:400;margin-left:5px;white-space:nowrap}
+.timeline{list-style:none;margin:0;padding:0}
+.timeline-event{display:grid;grid-template-columns:8ch 9px minmax(0,1fr);align-items:center;gap:7px;padding:6px;background:var(--panel);border:1px solid #414141;margin-bottom:2px}
+.timeline-event time{font-variant-numeric:tabular-nums;color:var(--muted);font-size:11px}
+.timeline-event strong{display:block;overflow-wrap:anywhere;font-size:12px}
+.timeline-event small{display:block;color:var(--muted);font-size:10px}
+.timeline-event .timeline-start{color:var(--green)}
+.timeline-day h2{margin:9px 0 3px;font-size:12px;color:var(--muted)}
+.timeline-range{font-size:10px;color:var(--muted)}
+#timeline-periods{grid-template-columns:repeat(3,1fr)}
 .timer-start{font-size:9px;color:var(--muted);line-height:1.3;margin-top:3px;white-space:nowrap}
 .timer-viewport{position:relative;overflow:hidden}
 .carousel-outgoing{position:absolute;inset:0 0 auto;pointer-events:none}
@@ -35,11 +44,11 @@
 <main id="content"></main>
 </div>
 <button class="fab" id="fab" aria-label="Добавить таймер"></button>
-<nav class="bottom" aria-label="Разделы"><button data-view="timers" class="active" id="timers-nav"></button><button data-view="stats" id="stats-nav"></button></nav>
+<nav class="bottom" aria-label="Разделы"><button data-view="timers" class="active" id="timers-nav"></button><button data-view="stats" id="stats-nav"></button><button data-view="timeline" id="timeline-nav">Таймлайн</button></nav>
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
-const APP_VERSION='1.3.0';
+const APP_VERSION='1.4.0';
 document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
@@ -64,7 +73,7 @@ function validDay(s){if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))retu
 function validState(s){if(!s||s.version!==1||!Array.isArray(s.timers)||!Array.isArray(s.entries))return false;const isStr=x=>typeof x==='string'&&x.length<=200;const validSegs=x=>Array.isArray(x)&&x.every(a=>Array.isArray(a)&&a.length===2&&Number.isFinite(a[0])&&Number.isFinite(a[1])&&a[1]>=a[0]);return s.timers.every(t=>t&&isStr(t.id)&&isStr(t.name)&&isStr(t.group)&&/^#[0-9a-fA-F]{6}$/.test(t.color)&&validSegs(t.segments)&&(t.runningSince===null||Number.isFinite(t.runningSince)))&&s.entries.every(e=>e&&isStr(e.id)&&isStr(e.timerId)&&isStr(e.name)&&isStr(e.group)&&/^#[0-9a-fA-F]{6}$/.test(e.color)&&((validSegs(e.segments))||(validDay(e.manualDay)&&Number.isFinite(e.manualMs)&&e.manualMs>0)))}
 function persist(){saveState();render()}
 function toast(message){const n=document.getElementById('toast-root');n.innerHTML=`<div class="toast">${esc(message)}</div>`;clearTimeout(toast.timeout);toast.timeout=setTimeout(()=>n.innerHTML='',2600)}
-function currentBounds(){let from=ui.day,to=ui.day;if(ui.period==='week'){const x=dayStart(ui.day),day=x.getDay()||7;from=addDays(ui.day,1-day);to=addDays(from,6)}else if(ui.period==='month'){const x=dayStart(ui.day);from=dayKey(new Date(x.getFullYear(),x.getMonth(),1));to=dayKey(new Date(x.getFullYear(),x.getMonth()+1,0))}else if(ui.period==='range'){from=ui.from;to=ui.to}return {from,to}}
+function currentBounds(period=ui.period){let from=ui.day,to=ui.day;if(period==='week'){const x=dayStart(ui.day),day=x.getDay()||7;from=addDays(ui.day,1-day);to=addDays(from,6)}else if(period==='month'){const x=dayStart(ui.day);from=dayKey(new Date(x.getFullYear(),x.getMonth(),1));to=dayKey(new Date(x.getFullYear(),x.getMonth()+1,0))}else if(period==='range'){from=ui.from;to=ui.to}return {from,to}}
 function rangeMs(from,to){return [dayStart(from).getTime(),dayStart(addDays(to,1)).getTime()]}
 function entryInRange(e,from,to){if(e.manualDay)return e.manualDay>=from&&e.manualDay<=to?e.manualMs:0;const [start,end]=rangeMs(from,to);return e.segments.reduce((n,[a,b])=>n+Math.max(0,Math.min(end,b)-Math.max(start,a)),0)}
 function byTimer(from,to){const m=new Map();for(const e of state.entries){const ms=entryInRange(e,from,to);if(!ms)continue;let k=e.timerId;let x=m.get(k);if(!x){const t=state.timers.find(t=>t.id===k);x={id:k,name:t?.name||e.name,group:t?.group||e.group,color:t?.color||e.color,ms:0};m.set(k,x)}x.ms+=ms}return [...m.values()].sort((a,b)=>b.ms-a.ms)}
@@ -161,12 +170,79 @@ groupContent.addEventListener('touchend',e=>{
 },{passive:false});
 groupContent.addEventListener('touchcancel',()=>{groupGesture=null},{passive:true});
 groupContent.addEventListener('click',e=>{
- if(Date.now()<swipeClickUntil){e.preventDefault();e.stopImmediatePropagation()}
+ if(ui.view==='timers'&&Date.now()<swipeClickUntil){e.preventDefault();e.stopImmediatePropagation()}
 },true);
 function renderStats(){const {from,to}=currentBounds();const invalid=from>to;const rows=invalid?[]:byTimer(from,to),sum=rows.reduce((n,r)=>n+r.ms,0),items=invalid?[]:state.entries.map(e=>({e,ms:entryInRange(e,from,to)})).filter(x=>x.ms>0).sort((a,b)=>(b.e.manualDay?dayStart(b.e.manualDay).getTime():Math.max(...b.e.segments.map(s=>s[1]),0))-(a.e.manualDay?dayStart(a.e.manualDay).getTime():Math.max(...a.e.segments.map(s=>s[1]),0)));let chart='';if(!invalid&&rangeDayCount(from,to)<=31){let ds=[],d=from;while(d<=to){ds.push({day:d,ms:totalRange(d,d)});d=addDays(d,1)}const max=Math.max(1,...ds.map(x=>x.ms)),dense=ds.length>14;chart=`<section class="stats-section"><div class="section-title"><h2>По дням</h2><span>${esc(rangeLabel(from,to))}</span></div><div class="chart" role="img" aria-label="Время по дням">${ds.map((x,i)=>`<div class="chart-col ${x.day===ui.day?'selected':''}" title="${esc(dateLabel(x.day))}: ${esc(duration(x.ms))}"><div class="bar-wrap"><div class="bar" style="height:${x.ms?Math.max(3,Math.round(x.ms/max*100)):2}%"></div></div><span>${!dense||i===0||i===ds.length-1||i%5===0?dayStart(x.day).getDate():''}</span></div>`).join('')}</div></section>`}
 return `<section class="summary"><div><div class="eyebrow">ВАШИ СОХРАНЁННЫЕ ЗАПИСИ</div><h1>Статистика<span style="color:var(--accent)">.</span></h1></div><button class="add-text" data-action="manual">${icon('plus',15)} Добавить время</button></section><div class="segmented">${[['day','День'],['week','Неделя'],['month','Месяц'],['range','Период']].map(([v,l])=>`<button data-period="${v}" class="${ui.period===v?'active':''}">${l}</button>`).join('')}</div>${ui.period==='range'?`<div class="range-box"><label>С <input type="date" data-range="from" value="${esc(ui.from)}"></label><label>По <input type="date" data-range="to" value="${esc(ui.to)}"></label></div>`:''}${invalid?'<div class="range-warning">Дата начала должна быть раньше даты окончания.</div>':''}<div class="stat-hero"><div class="eyebrow">${invalid?'ВЫБЕРИТЕ ПЕРИОД':esc(rangeLabel(from,to))}</div><strong>${duration(sum)}</strong><p>Сумма сохранённых таймеров · ${items.length} ${items.length===1?'запись':items.length>1&&items.length<5?'записи':'записей'}</p></div>${chart}<section class="stats-section"><div class="section-title"><h2>По таймерам</h2><span>${rows.length} ${rows.length===1?'таймер':'таймеров'}</span></div><div class="stat-list">${rows.length?rows.map(x=>`<div class="stat-item" style="--timer-color:${esc(x.color)}"><div class="stat-top"><span class="dot"></span><div class="name">${esc(x.name)}<small>${esc(x.group)}</small></div><strong>${duration(x.ms)}</strong></div><div class="track"><div style="width:${sum?Math.max(2,x.ms/sum*100):0}%"></div></div></div>`).join(''):'<div class="empty"><strong>Здесь пока пусто</strong><p>Запустите таймер и сохраните время, чтобы оно появилось в статистике.</p></div>'}</div></section>${items.length?`<section class="stats-section"><div class="section-title"><h2>Записи</h2><span>за выбранный период</span></div><div class="entry-list">${items.map(({e,ms})=>`<div class="entry"><span class="dot" style="--timer-color:${esc(e.color)}"></span><div class="entry-info"><strong>${esc(e.name)}</strong><small>${e.manualDay?'Вручную · '+esc(dateLabel(e.manualDay,{day:'numeric',month:'short'})):esc(entryDescription(e,from,to))}</small></div><span class="entry-duration">${duration(ms)}</span><button class="entry-delete" data-delete-entry="${esc(e.id)}" aria-label="Удалить запись ${esc(e.name)}">${icon('trash',17)}</button></div>`).join('')}</div></section>`:''}<p class="note">В статистику попадает только сохранённое время. Если таймеры шли одновременно, их время суммируется.</p>`}
 function entryDescription(e,from,to){const first=e.segments[0]?.[0],last=e.segments[e.segments.length-1]?.[1];if(first==null)return 'Сохранено';const fmt=x=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(x));return `${fmt(first)} — ${fmt(last)}`}
-function render(){renderDate();document.getElementById('content').innerHTML=ui.view==='timers'?renderTimers():renderStats();document.getElementById('timers-nav').classList.toggle('active',ui.view==='timers');document.getElementById('stats-nav').classList.toggle('active',ui.view==='stats');document.getElementById('fab').classList.toggle('hidden',ui.view!=='timers');if(!storageOK)document.getElementById('storage-warning').innerHTML='<div class="storage-alert">Не удалось прочитать данные на устройстве. Не закрывайте страницу, пока не проверите настройки браузера.</div>'}
+function timelineEvents(day,now=Date.now()){
+ const [start,end]=rangeMs(day,day),byId=new Map(),events=[];
+ function add(timer,from,to){
+  if(from>=end||(to===null?now<Math.max(start,from):to<start))return;
+  if(!byId.has(timer.timerId))byId.set(timer.timerId,[]);
+  byId.get(timer.timerId).push({timer,from,to});
+ }
+ for(const entry of state.entries){
+  if(!entry.manualDay)for(const [from,to] of entry.segments)add(entry,from,to);
+ }
+ for(const timer of state.timers){
+  const info={...timer,timerId:timer.id};
+  for(const [from,to] of timer.segments)add(info,from,to);
+  if(timer.runningSince!==null)add(info,timer.runningSince,null);
+ }
+ function emit({timer,from,to}){
+  if(from>=start||to!==start){
+   const active=to===null&&now>=start&&now<end;
+   events.push({time:Math.max(from,start),type:from<start?'carry':'start',timer,active});
+  }
+  if(to!==null&&to>=start&&to<end)events.push({time:to,type:'stop',timer,active:false});
+ }
+ for(const intervals of byId.values()){
+  intervals.sort((a,b)=>a.from-b.from||(a.to??Infinity)-(b.to??Infinity));
+  let previous=null;
+  for(const interval of intervals){
+   // Saving a running timer creates two segments that meet at the save time.
+   if(previous&&previous.to===interval.from)previous.to=interval.to;
+   else{if(previous)emit(previous);previous=interval}
+  }
+  if(previous)emit(previous);
+ }
+ return events.sort((a,b)=>a.time-b.time);
+}
+const timelineClock=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const timelinePeriods=[['day','День'],['week','Неделя'],['month','Месяц']];
+let timelinePeriod='day';
+document.getElementById('content').addEventListener('click',e=>{
+ const period=e.target.closest('[data-timeline-period]')?.dataset.timelinePeriod;
+ if(ui.view!=='timeline'||!timelinePeriods.some(([value])=>value===period))return;
+ timelinePeriod=period;
+ render();
+ document.querySelector(`[data-timeline-period="${period}"]`)?.focus({preventScroll:true});
+});
+function renderTimeline(now=Date.now()){
+ const {from,to}=currentBounds(timelinePeriod),days=[];
+ for(let day=from;day<=to;day=addDays(day,1)){
+  const events=timelineEvents(day,now);
+  if(events.length)days.push({day,events});
+ }
+ const labels={start:'Старт',stop:'Стоп',carry:'Продолжался с прошлого дня'};
+ return `<section class="summary"><h1>Таймлайн<span style="color:var(--accent)">.</span></h1><span class="timeline-range">${esc(rangeLabel(from,to))}</span></section>
+ <div class="segmented" id="timeline-periods" aria-label="Период таймлайна">${timelinePeriods.map(([value,label])=>`<button data-timeline-period="${value}" class="${value===timelinePeriod?'active':''}" aria-pressed="${value===timelinePeriod}">${label}</button>`).join('')}</div>
+ ${days.length?days.map(({day,events})=>`<section class="timeline-day">
+ ${timelinePeriod==='day'?'':`<h2>${esc(dateLabel(day,{weekday:'long',day:'numeric',month:'long'}))}</h2>`}
+ <ol class="timeline">${events.map(({time,type,timer,active})=>`<li class="timeline-event">
+ <time>${timelineClock.format(time)}</time><span class="dot" style="--timer-color:${esc(timer.color)}" aria-hidden="true"></span>
+ <div><strong>${esc(timer.name)}</strong><small><span class="${type==='stop'?'':'timeline-start'}">${labels[type]}${active?' · идёт сейчас':''}</span> · ${esc(timer.group)}</small></div></li>`).join('')}</ol></section>`).join(''):
+ '<div class="empty"><strong>Нет событий за этот период</strong><p>Здесь появятся запуски и остановки таймеров.</p></div>'}
+ <p class="note">Сохранённые и текущие отсчёты. Время, добавленное вручную, не отображается: у него нет точного времени начала и конца. Сброс удаляет несохранённые события.</p>`;
+}
+function render(){
+ renderDate();
+ document.getElementById('content').innerHTML=ui.view==='timers'?renderTimers():ui.view==='timeline'?renderTimeline():renderStats();
+ for(const view of ['timers','stats','timeline'])document.getElementById(`${view}-nav`).classList.toggle('active',ui.view===view);
+ document.getElementById('fab').classList.toggle('hidden',ui.view!=='timers');
+ if(!storageOK)document.getElementById('storage-warning').innerHTML='<div class="storage-alert">Не удалось прочитать данные на устройстве. Не закрывайте страницу, пока не проверите настройки браузера.</div>';
+}
 function openModal(title,body){ui.modal=true;document.getElementById('modal-root').innerHTML=`<div class="overlay" data-overlay><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="sheet-head"><h2>${esc(title)}</h2><button class="close" data-close aria-label="Закрыть">${icon('close',18)}</button></div>${body}</div></div>`}
 function closeModal(){ui.modal=false;document.getElementById('modal-root').innerHTML=''}
 function timerForm(t){const isNew=!t;let c=t?.color||COLORS[state.timers.length%COLORS.length];const groupNames=groups();openModal(isNew?'Новый таймер':'Изменить таймер',`<form id="timer-form" data-id="${esc(t?.id||'')}"><label class="field">Название<input name="name" maxlength="80" required autocomplete="off" placeholder="Например, прогулка" value="${esc(t?.name||'')}"></label><label class="field">Группа<input name="group" maxlength="60" required list="group-options" autocomplete="off" placeholder="Например, Общее" value="${esc(t?.group||ui.group||'Общее')}"><datalist id="group-options">${groupNames.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></label><div class="field">Цвет</div><div class="color-row">${COLORS.map(x=>`<button type="button" class="color-choice ${x===c?'selected':''}" data-color="${x}" style="--c:${x}" aria-label="Выбрать цвет"></button>`).join('')}</div><input type="hidden" name="color" value="${c}"><div class="sheet-actions"><button class="primary" type="submit">${isNew?'Создать таймер':'Сохранить изменения'}</button></div></form>`);setTimeout(()=>document.querySelector('#timer-form input[name=name]')?.focus(),80)}

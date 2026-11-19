@@ -7,7 +7,7 @@ const elements = new Map();
 const element = id => {
   if (!elements.has(id)) elements.set(id, {
     innerHTML: '', classList: { toggle() {} },
-    addEventListener(type, fn) { handlers[`${id}:${type}`] = fn; },
+    addEventListener(type, fn, options) { handlers[`${id}:${type}${options === true ? ':capture' : ''}`] = fn; },
     scrollIntoView() {},
   });
   return elements.get(id);
@@ -30,7 +30,7 @@ const code = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/scri
 vm.runInContext(code, context);
 const run = code => vm.runInContext(code, context);
 assert.equal(run('ui.group'), 'Общее');
-assert(element('.brand b').innerHTML.includes('v1.3.0'));
+assert(element('.brand b').innerHTML.includes('v1.4.0'));
 assert.equal(run('timerStart({segments:[],runningSince:null})'), null);
 assert.equal(run('timerStart({segments:[],runningSince:5000})'), 5000);
 assert.equal(run('timerStart({segments:[[1000,2000]],runningSince:5000})'), 1000);
@@ -66,7 +66,7 @@ swipe(100, 40);
 assert.equal(run('ui.group'), 'Общее');
 let prevented = false;
 let stopped = false;
-handlers['content:click']({ preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });
+handlers['content:click:capture']({ preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });
 assert(prevented && stopped); // A swipe starting on a button must not activate it.
 run("ui.view='stats'");
 swipe(-100);
@@ -103,5 +103,30 @@ assert.equal(run('ui.group'), 'Воздух');
 run('state.timers=[];render()');
 assert.equal(run('ui.group'), null);
 assert(element('content').innerHTML.includes('Пока нет таймеров'));
+run(`
+ const stamp=(day,hour,minute=0)=>new Date(2026,10,day,hour,minute).getTime();
+ const task={id:'a',name:'Работа',group:'Общее',color:'#ff9900'};
+ state.timers=[{...task,runningSince:stamp(18,9),segments:[[stamp(17,23),stamp(18,1)]]}];
+ state.entries=[
+  {...task,timerId:'a',segments:[[stamp(17,22),stamp(17,23)]]},
+  {...task,timerId:'a',segments:[[stamp(13,8),stamp(13,9)]]},
+  {...task,timerId:'b',name:'Прогулка',segments:[[stamp(18,0,30),stamp(18,2)]]},
+  {...task,timerId:'c',name:'Вручную',manualDay:'2026-11-18',manualMs:60000}
+ ];
+ ui.day='2026-11-18';ui.view='timeline';render();
+`);
+assert.equal(run(`timelineEvents(ui.day,stamp(18,10)).map(e=>e.type+':'+e.timer.name).join(',')`),
+  'carry:Работа,start:Прогулка,stop:Работа,stop:Прогулка,start:Работа');
+assert.equal(run(`timelineEvents(ui.day,stamp(18,10)).filter(e=>e.active).length`), 1);
+assert.equal(run(`timelineEvents('2026-11-17',stamp(18,10)).map(e=>e.type).join(',')`), 'start');
+assert.equal(run(`timelineEvents('2026-11-19',stamp(18,10)).length`), 0);
+assert.equal(run(`currentBounds('week').from`), '2026-11-16');
+assert.equal(run(`currentBounds('month').to`), '2026-11-30');
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 1);
+run(`timelinePeriod='week'`);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 3);
+run(`timelinePeriod='month'`);
+assert.equal(run(`(renderTimeline(stamp(19,10)).match(/class="timeline-day"/g)||[]).length`), 4);
+assert.equal(run(`ui.period`), 'day');
 new vm.Script(readFileSync('sw.js', 'utf8'));
-console.log('PASS: group filtering, swipes, boundaries, scroll/modal guards, reset, persistence, empty state, syntax');
+console.log('PASS: timer regressions and day/week/month timeline, midnight, ongoing and unsaved intervals');
