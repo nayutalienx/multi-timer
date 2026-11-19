@@ -63,7 +63,7 @@
 <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div><input type="file" id="import-file" accept="application/json,.json" hidden>
 <script>
 'use strict';
-const APP_VERSION='1.6.0';
+const APP_VERSION='1.6.1';
 document.querySelector('.brand b').innerHTML=`моё время <span class="app-version">v${APP_VERSION}</span>`;
 const KEY='moyo-vremya-data-v1';
 const COLORS=['#f6a83c','#b6d2a4','#87b9c8','#d9a1a0','#c7b4db','#dfca81'];
@@ -266,18 +266,26 @@ document.getElementById('content').addEventListener('click',e=>{
  document.querySelector(`[data-timeline-period="${period}"]`)?.focus({preventScroll:true});
 });
 function renderTimeline(now=Date.now()){
- const {from,to}=currentBounds(timelinePeriod),[start,end]=rangeMs(from,to),ticks=[];
- const percent=ms=>100*ms/(end-start);
- if(timelinePeriod==='day'){
-  for(let time=start;time<end;time+=3600000)ticks.push([time,timelineClock.format(time)]);
+ const {from,to}=currentBounds(timelinePeriod),[periodStart,end]=rangeMs(from,to),ticks=[];
+ const allTracks=timelineTracks(periodStart,end,now),tracks=allTracks.filter(track=>!hiddenTracks.has(track.id));
+ const isDay=timelinePeriod==='day',hour=3600000;
+ const scaleStart=tracks.length?tracks.reduce((first,track)=>Math.min(first,track.clips[0].left),end):periodStart;
+ const pixelsPerHour=isDay?60:timelinePeriod==='week'?160/24:80/24;
+ const scaleWidth=Math.ceil((end-scaleStart)/hour*pixelsPerHour);
+ const percent=ms=>100*ms/(end-scaleStart);
+ if(isDay){
+  ticks.push([scaleStart,timelineClock.format(scaleStart)]);
+  for(let time=periodStart+hour;time<end;time+=hour){
+   if(time>scaleStart)ticks.push([time,time-scaleStart>=hour*0.6?timelineClock.format(time):'']);
+  }
  }else{
+  const firstLabel=dateLabel(dayKey(scaleStart),{day:'numeric',month:'short'});
+  ticks.push([scaleStart,scaleStart===dayStart(dayKey(scaleStart)).getTime()?firstLabel:`${firstLabel} ${timelineClock.format(scaleStart)}`]);
   for(let day=from;day<=to;day=addDays(day,1)){
-   ticks.push([dayStart(day).getTime(),dateLabel(day,{day:'numeric',month:'short'})]);
+   const time=dayStart(day).getTime();
+   if(time>scaleStart)ticks.push([time,(time-scaleStart)/hour*pixelsPerHour>=80?dateLabel(day,{day:'numeric',month:'short'}):'']);
   }
  }
- const allTracks=timelineTracks(start,end,now),tracks=allTracks.filter(track=>!hiddenTracks.has(track.id));
- const firstClip=tracks.reduce((first,track)=>Math.min(first,track.clips[0].left),end);
- const anchor=timelinePeriod==='day'?(tracks.length?Math.max(start,firstClip-3600000):start):dayStart(ui.day).getTime();
  return `<section class="summary"><h1>Таймлайн<span style="color:var(--accent)">.</span></h1><span class="timeline-range">${esc(rangeLabel(from,to))}</span></section>
  <div class="segmented" id="timeline-periods" aria-label="Период таймлайна">${timelinePeriods.map(([value,label])=>`<button data-timeline-period="${value}" class="${value===timelinePeriod?'active':''}" aria-pressed="${value===timelinePeriod}">${label}</button>`).join('')}</div>
  ${allTracks.length||hiddenTracks.size?`<details class="timeline-filter">
@@ -286,14 +294,14 @@ function renderTimeline(now=Date.now()){
  ${allTracks.map(({id,timer})=>`<label><input type="checkbox" data-timeline-track="${esc(id)}" ${hiddenTracks.has(id)?'':'checked'}><span class="dot" style="--timer-color:${esc(timer.color)}" aria-hidden="true"></span><span>${esc(timer.name)} · ${esc(timer.group)}</span></label>`).join('')}
  ${hiddenTracks.size?'<button type="button" data-timeline-show-all>Показать все дорожки</button>':''}
  </div></details>`:''}
- <div class="timeline-scroll" role="region" aria-label="Дорожки таймеров, горизонтальная прокрутка" tabindex="0" data-range="${timelinePeriod}:${from}:${to}" data-anchor="${percent(anchor-start)}">
- <div class="timeline-board" style="--scale-width:${ticks.length*({day:60,week:160,month:80}[timelinePeriod])}px">
- <div class="timeline-grid" aria-hidden="true">${ticks.map(([time])=>`<i style="--at:${percent(time-start)}%"></i>`).join('')}</div>
- <div class="timeline-row timeline-ruler"><div class="timeline-label">Таймер</div><div class="timeline-lane">${ticks.map(([time,label])=>`<span class="timeline-mark" style="--at:${percent(time-start)}%">${esc(label)}</span>`).join('')}</div></div>
+ <div class="timeline-scroll" role="region" aria-label="Дорожки таймеров, горизонтальная прокрутка" tabindex="0" data-range="${timelinePeriod}:${from}:${to}:${scaleStart}">
+ <div class="timeline-board" style="--scale-width:${scaleWidth}px">
+ <div class="timeline-grid" aria-hidden="true">${ticks.map(([time])=>`<i style="--at:${percent(time-scaleStart)}%"></i>`).join('')}</div>
+ <div class="timeline-row timeline-ruler"><div class="timeline-label">Таймер</div><div class="timeline-lane">${ticks.filter(([,label])=>label).map(([time,label])=>`<span class="timeline-mark" style="--at:${percent(time-scaleStart)}%">${esc(label)}</span>`).join('')}</div></div>
  ${tracks.map(({timer,clips})=>`<div class="timeline-row timeline-track"><div class="timeline-label"><strong>${esc(timer.name)}</strong><small>${esc(timer.group)}</small></div><div class="timeline-lane">
  ${clips.map(({from,to,left,right})=>{
   const details=`${timer.name}: ${timelineStamp.format(from)} → ${to===null?'идёт сейчас':timelineStamp.format(to)}`;
-  return `<button class="timeline-clip${to===null?' ongoing':''}" style="--at:${percent(left-start)}%;--length:${percent(right-left)}%;--color:${esc(timer.color)}" data-timeline-clip="${esc(details)}" aria-label="${esc(details)}" title="${esc(details)}" aria-pressed="false"><span>${esc(timelineClock.format(from))}</span></button>`;
+   return `<button class="timeline-clip${to===null?' ongoing':''}" style="--at:${percent(left-scaleStart)}%;--length:${percent(right-left)}%;--color:${esc(timer.color)}" data-timeline-clip="${esc(details)}" aria-label="${esc(details)}" title="${esc(details)}" aria-pressed="false"><span>${esc(timelineClock.format(from))}</span></button>`;
  }).join('')}</div></div>`).join('')}
  </div></div>
  ${tracks.length?'<output id="timeline-detail" class="timeline-detail" aria-live="polite">Прокручивайте шкалу вбок. Нажмите на отрезок, чтобы увидеть точное время.</output>':
@@ -312,10 +320,7 @@ function render(){
   const filter=content.querySelector?.('.timeline-filter');
   if(filter&&filterOpen)filter.open=true;
   const scroll=content.querySelector?.('.timeline-scroll');
-  if(scroll){
-   const lane=scroll.querySelector('.timeline-ruler .timeline-lane');
-   scroll.scrollLeft=previousTimeline?.dataset.range===scroll.dataset.range?previousLeft:lane.clientWidth*Number(scroll.dataset.anchor)/100;
-  }
+  if(scroll&&previousTimeline?.dataset.range===scroll.dataset.range)scroll.scrollLeft=previousLeft;
  }
  for(const view of ['timers','stats','timeline'])document.getElementById(`${view}-nav`).classList.toggle('active',ui.view===view);
  document.getElementById('fab').classList.toggle('hidden',ui.view!=='timers');
